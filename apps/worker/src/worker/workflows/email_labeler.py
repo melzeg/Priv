@@ -24,7 +24,7 @@ from mistralai.workflows.plugins.mistralai.connectors import (
 
 logger = structlog.get_logger(__name__)
 
-gmail_connector = connector("gmail", run_as="deployment", credentials_name="gmail-workspace")
+gmail_connector = connector("gmail", run_as="deployment")
 
 LABEL_NAMES = ("Wijn", "Muziek", "Zeilen")
 MODEL = "mistral-small-latest"
