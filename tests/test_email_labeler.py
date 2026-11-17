@@ -1,6 +1,6 @@
 from worker.workflows.email_labeler import (
     ThreadSummary,
-    build_classification_request,
+    build_classification_prompt,
     build_search_query,
     extract_thread_summaries,
     normalize_category,
@@ -88,7 +88,7 @@ def test_extract_thread_summaries_truncates_long_text():
     assert len(threads[0].text) <= 6000
 
 
-def test_build_classification_request_contains_rules_and_content():
+def test_build_classification_prompt_contains_rules_and_content():
     thread = ThreadSummary(
         thread_id="t1",
         subject="Zeilweekend",
@@ -96,9 +96,6 @@ def test_build_classification_request_contains_rules_and_content():
         text="We organiseren een zeilweekend.",
         message_ids=["m1"],
     )
-    request = build_classification_request(thread)
-    prompt = request.messages[0].content
+    prompt = build_classification_prompt(thread)
     assert "wijn" in prompt and "muziek" in prompt and "zeilen" in prompt
     assert "Zeilweekend" in prompt
-    assert request.model == "mistral-small-latest"
-    assert request.temperature == 0.0

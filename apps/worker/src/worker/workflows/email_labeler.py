@@ -15,9 +15,7 @@ import pydantic
 import structlog
 
 import mistralai.workflows as workflows
-from mistralai.client import models as mistralai_models
 from mistralai.workflows import Depends
-from mistralai.workflows.plugins.mistralai import chat_parse_to_model
 from mistralai.workflows.plugins.mistralai.connectors import (
     ToolCallClient,
     connector,
@@ -184,7 +182,7 @@ def extract_thread_summaries(result: Any) -> list[ThreadSummary]:
     return summaries
 
 
-def build_classification_request(thread: ThreadSummary) -> mistralai_models.ChatCompletionRequest:
+def build_classification_prompt(thread: ThreadSummary) -> str:
     prompt = (
         "Klassificeer de volgende e-mail in exact één categorie: "
         "'wijn', 'muziek', 'zeilen' of 'geen'.\n"
@@ -196,11 +194,23 @@ def build_classification_request(thread: ThreadSummary) -> mistralai_models.Chat
         f"Onderwerp: {thread.subject}\n\n"
         f"Inhoud:\n{thread.text or '(geen inhoud)'}"
     )
-    return mistralai_models.ChatCompletionRequest(
+    return prompt
+
+
+@workflows.activity()
+async def classify_thread(thread: ThreadSummary) -> Classification:
+    from mistralai.workflows.plugins.mistralai import get_mistral_client
+
+    client = get_mistral_client()
+    response = await client.chat.complete_async(
         model=MODEL,
-        messages=[mistralai_models.UserMessage(content=prompt)],
+        messages=[{"role": "user", "content": build_classification_prompt(thread)}],
         temperature=0.0,
     )
+    content = ""
+    if response.choices and response.choices[0].message:
+        content = response.choices[0].message.content or ""
+    return Classification(category=normalize_category(content))
 
 
 @workflows.activity()
@@ -281,11 +291,8 @@ class EmailLabelerWorkflow:
 
         results: list[ThreadResult] = []
         for thread in threads:
-            classification = await chat_parse_to_model(
-                Classification,
-                build_classification_request(thread),
-            )
-            category = normalize_category(classification.category)
+            classification = await classify_thread(thread)
+            category = classification.category
             labeled = False
             if category in CATEGORY_KEYS and not params.dry_run:
                 await apply_label(
