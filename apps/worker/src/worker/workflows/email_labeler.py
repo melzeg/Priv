@@ -24,7 +24,12 @@ from mistralai.workflows.plugins.mistralai.connectors import (
 
 logger = structlog.get_logger(__name__)
 
-gmail_connector = connector("gmail", run_as="deployment")
+gmail_connector = connector(
+    "gmail",
+    run_as="deployment",
+    credentials_name="gmail-deployment",
+    auto_auth=False,
+)
 
 LABEL_NAMES = ("Wijn", "Muziek", "Zeilen")
 MODEL = "mistral-small-latest"
@@ -40,6 +45,7 @@ class LabelerInput(pydantic.BaseModel):
     dry_run: bool = False
     days_back: int = DEFAULT_DAYS_BACK
     max_threads: int = DEFAULT_MAX_THREADS
+    debug_auth: bool = False
 
 
 class ThreadSummary(pydantic.BaseModel):
@@ -198,6 +204,19 @@ def build_classification_prompt(thread: ThreadSummary) -> str:
 
 
 @workflows.activity()
+async def create_deployment_auth_url() -> str:
+    from mistralai.workflows.plugins.mistralai import get_mistral_client
+
+    client = get_mistral_client()
+    result = await client.beta.connectors.get_auth_url_async(
+        connector_id_or_name="gmail",
+        credentials_name="gmail-deployment",
+        app_return_url="https://console.mistral.ai/build/workflows/deployments/email-labeler",
+    )
+    return result.auth_url
+
+
+@workflows.activity()
 async def classify_thread(thread: ThreadSummary) -> Classification:
     from mistralai.workflows.plugins.mistralai import get_mistral_client
 
@@ -286,6 +305,10 @@ class EmailLabelerWorkflow:
     @workflows.workflow.entrypoint
     async def run(self, input: LabelerInput | None = None) -> LabelerSummary:
         params = input or LabelerInput()
+        if params.debug_auth:
+            auth_url = await create_deployment_auth_url()
+            logger.info("DEPLOYMENT_AUTH_URL", auth_url=auth_url)
+            return LabelerSummary(threads_seen=0, labeled=0, dry_run=True)
         label_ids = await ensure_labels()
         threads = await find_unlabeled_threads(days_back=params.days_back, max_threads=params.max_threads)
 
